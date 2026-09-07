@@ -1,8 +1,11 @@
 import { WebSocketServer } from 'ws';
-// Start the local WebSocket server on the requested port (or default 8080).
+import { findAvailablePort } from './port-utils.js';
+
 export async function startWebSocketServer({ port = 8080, onMessage } = {}) {
-  // Bind all interfaces so phones on the same Wi-Fi can reach the desktop.
-  const server = new WebSocketServer({ host: '0.0.0.0', port });
+  const availablePort = await findAvailablePort({ preferredPort: port });
+
+  // Bind all interfaces so phones on the same Wi‑Fi can reach the desktop.
+  const server = new WebSocketServer({ host: '0.0.0.0', port: availablePort });
 
   server.on('connection', (socket) => {
     socket.send(JSON.stringify({ type: 'CONNECTED', message: 'Zero Latency desktop connected.' }));
@@ -37,8 +40,8 @@ export async function startWebSocketServer({ port = 8080, onMessage } = {}) {
     };
     const handleListening = () => {
       server.removeListener('error', handleError);
-      console.log(`WebSocket server listening on ws://0.0.0.0:${port}`);
-      server._boundPort = port;
+      console.log(`WebSocket server listening on ws://0.0.0.0:${availablePort}`);
+      server._boundPort = availablePort;
       resolve(server);
     };
 

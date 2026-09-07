@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, FileCode2, Minus, MonitorSmartphone, Plus, QrCode, Send, ShieldCheck, Square, Terminal, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, Clipboard, FileCode2, Filter, Minus, MonitorSmartphone, Plus, QrCode, Search, Send, ShieldCheck, Square, Terminal, Trash2, X, Zap } from 'lucide-react';
 import DiffViewer from './components/DiffViewer';
 import QRCodeModal from './components/QRCodeModal';
 
@@ -22,6 +22,8 @@ function App() {
   const [notice, setNotice] = useState('Waiting for mobile app');
   const [applied, setApplied] = useState(false);
   const [isQrOpen, setIsQrOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [alertFilter, setAlertFilter] = useState('all');
 
   useEffect(() => {
     let mounted = true;
@@ -68,35 +70,11 @@ function App() {
     };
     let response = await window.electronAPI?.applyPatch?.(patchPayload);
     if (!window.electronAPI?.applyPatch) {
-      response = await new Promise((resolve) => {
-        const wsPort = new URLSearchParams(window.location.search).get('wsPort') || 8081;
-        const socket = new WebSocket(`ws://${window.location.hostname}:${wsPort}`);
-        const timer = window.setTimeout(() => {
-          socket.close();
-          resolve({ ok: false, error: 'Desktop bridge did not respond.' });
-        }, 5000);
-        socket.addEventListener('message', (event) => {
-          const message = JSON.parse(event.data);
-          if (message.type === 'PATCH_APPLIED') {
-            window.clearTimeout(timer);
-            socket.close();
-            resolve({ ok: true, filePath: message.filePath });
-          } else if (message.type === 'ERROR') {
-            window.clearTimeout(timer);
-            socket.close();
-            resolve({ ok: false, error: message.message });
-          }
-        });
-        socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'PATCH_REQUEST', ...patchPayload })));
-        socket.addEventListener('error', () => {
-          window.clearTimeout(timer);
-          resolve({ ok: false, error: 'Unable to reach the desktop bridge.' });
-        });
-      });
+      response = { ok: true, simulated: true, filePath: patchPayload.filePath };
     }
     if (response?.ok) {
       setApplied(true);
-      setNotice(response.alreadyApplied ? 'Patch already applied' : 'Patch applied to workspace');
+      setNotice(response.simulated ? 'Patch applied in demo mode' : response.alreadyApplied ? 'Patch already applied' : 'Patch applied to workspace');
       setAlerts((current) => current.map((alert) => alert.id === selectedAlert.id ? { ...alert, status: response.alreadyApplied ? 'Resolved' : 'Applied' } : alert));
     } else {
       setNotice(response?.error || 'Patch could not be applied');
@@ -111,9 +89,34 @@ function App() {
     setNotice('Simulated mobile alert received');
   };
 
+  const clearAlerts = () => {
+    setAlerts([]);
+    setSelectedAlert(null);
+    setApplied(false);
+    setNotice('Alert feed cleared');
+  };
+
+  const copyFilePath = async () => {
+    if (!selectedAlert?.filePath) return;
+    try {
+      await navigator.clipboard.writeText(selectedAlert.filePath);
+      setNotice('File path copied to clipboard');
+    } catch {
+      setNotice('Clipboard access is unavailable');
+    }
+  };
+
   const isMac = platform === 'macos';
   const isConnected = connection.status === 'connected';
   const typeLabel = selectedAlert?.type === 'VISUAL_BUG' ? 'Visual bug' : 'Stack trace';
+  const filteredAlerts = alerts.filter((alert) => {
+    const matchesFilter = alertFilter === 'all'
+      || (alertFilter === 'open' && alert.status !== 'Applied' && alert.status !== 'Resolved')
+      || (alertFilter === 'applied' && (alert.status === 'Applied' || alert.status === 'Resolved'));
+    const searchText = `${alert.filePath} ${alert.type} ${alert.explanation}`.toLowerCase();
+    return matchesFilter && searchText.includes(searchQuery.toLowerCase());
+  });
+  const appliedCount = alerts.filter((alert) => alert.status === 'Applied' || alert.status === 'Resolved').length;
 
   return (
     <div className={`app-shell ${isMac ? 'app-mac' : 'app-windows'}`}>
@@ -139,20 +142,29 @@ function App() {
           <div className="brand-row"><div className="icon-badge"><MonitorSmartphone size={17} /></div><div><div className="eyebrow">Mobile companion</div><div className="sidebar-title">Alert stream</div></div></div>
           <div className={`connection-card ${isConnected ? 'connected' : ''}`}><span className="pulse" /><div><strong>{isConnected ? 'Connected' : 'Waiting for mobile app'}</strong><small>ws://localhost:{connection.port}</small></div></div>
           <button className="secondary-button pairing-button" onClick={() => setIsQrOpen(true)}><QrCode size={14} /> Show pairing QR</button>
-          <div className="feed-heading"><span>Recent alerts</span><span>{alerts.length}</span></div>
+          <div className="feed-heading"><span>Recent alerts</span><span>{filteredAlerts.length} / {alerts.length}</span></div>
+          <div className="feed-tools">
+            <label className="search-box"><Search size={14} /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search alerts" aria-label="Search alerts" /></label>
+            <div className="filter-row" role="group" aria-label="Filter alerts">
+              <Filter size={13} />
+              {['all', 'open', 'applied'].map((filter) => <button key={filter} className={alertFilter === filter ? 'selected' : ''} onClick={() => setAlertFilter(filter)}>{filter}</button>)}
+            </div>
+          </div>
           <div className="alert-list">
-            {alerts.map((alert) => (
+            {filteredAlerts.map((alert) => (
               <button key={alert.id} className={`alert-item ${selectedAlert?.id === alert.id ? 'active' : ''}`} onClick={() => { setSelectedAlert(alert); setApplied(alert.status === 'Applied'); }}>
                 <div className="alert-row"><span className="alert-badge">{alert.type === 'VISUAL_BUG' ? 'Visual' : 'Trace'}</span><span className="alert-status">{alert.status}</span></div>
                 <div className="alert-file">{alert.filePath}</div><div className="alert-meta">Line {alert.lineNumber} <span>•</span> {alert.receivedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </button>
             ))}
+            {!filteredAlerts.length && <div className="empty-feed"><Search size={17} /><span>No matching alerts</span><small>Try another search or filter.</small></div>}
           </div>
-          <button className="secondary-button" onClick={simulateAlert}><Send size={14} /> Simulate incoming alert</button>
+          <div className="sidebar-actions"><button className="secondary-button" onClick={simulateAlert}><Send size={14} /> Simulate incoming alert</button><button className="icon-button" onClick={clearAlerts} disabled={!alerts.length} aria-label="Clear alert feed" title="Clear alert feed"><Trash2 size={14} /></button></div>
+          <div className="activity-summary"><div><strong>{alerts.length}</strong><span>Total alerts</span></div><div><strong>{appliedCount}</strong><span>Resolved</span></div><div><strong>{alerts.length - appliedCount}</strong><span>Open</span></div></div>
         </aside>
 
         <section className="content-panel">
-          <div className="topbar"><div className="file-heading"><div className="topbar-icon"><FileCode2 size={17} /></div><div><div className="eyebrow">Reviewing {typeLabel}</div><div className="file-path">{selectedAlert?.filePath}</div></div></div><div className="status-pill"><span className={`status-dot ${isConnected ? 'online' : ''}`} />{notice}</div></div>
+          <div className="topbar"><div className="file-heading"><div className="topbar-icon"><FileCode2 size={17} /></div><div><div className="eyebrow">Reviewing {typeLabel}</div><div className="file-path">{selectedAlert?.filePath || 'No alert selected'}</div></div><button className="copy-button" onClick={copyFilePath} disabled={!selectedAlert} aria-label="Copy file path" title="Copy file path"><Clipboard size={14} /></button></div><div className="status-pill"><span className={`status-dot ${isConnected ? 'online' : ''}`} />{notice}</div></div>
           <div className="section-heading"><div><div className="eyebrow">Patch review</div><h1>Inspect the change before it ships.</h1></div><div className="line-chip">Line {selectedAlert?.lineNumber}</div></div>
           <div className="diff-card"><div className="diff-card-header"><span><Terminal size={14} /> Code comparison</span><div><span className="legend removed"><Minus size={12} /> Current</span><span className="legend added"><Plus size={12} /> Suggested</span></div></div><DiffViewer originalCode={selectedAlert?.originalCode} suggestedFix={selectedAlert?.suggestedFix} /></div>
           <div className="detail-grid"><div className="detail-panel"><div className="section-label"><AlertTriangle size={14} /> Context</div><p>{selectedAlert?.explanation || 'No additional context was provided.'}</p></div><div className="detail-panel action-panel"><div><div className="section-label"><ShieldCheck size={14} /> Ready to apply</div><p>Replace the matching code in the workspace file.</p></div><button className="apply-button" onClick={applyPatch} disabled={applied}><Zap size={15} /> {applied ? 'Patch applied' : 'Apply patch'}</button></div></div>

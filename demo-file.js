@@ -1,7 +1,7 @@
 const numbers = [10, 20, 30];
 
 function renderValue() {
-  console.log(numbers[5]);
+  console.log(numbers[2]);
 }
 
 renderValue();

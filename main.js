@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startWebSocketServer } from './server/websocket-server.js';
+import { findAvailablePort } from './server/port-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -142,7 +143,7 @@ ipcMain.handle('app:ready', () => ({
 app.whenReady().then(async () => {
   createWindow();
   try {
-    let port = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 8080;
+    const preferredPort = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 8080;
     const onMessage = async (message, socket) => {
       if (message.type === 'PATCH_REQUEST') {
         const result = await applyPatchToWorkspace(message);
@@ -155,18 +156,20 @@ app.whenReady().then(async () => {
       socket.send(JSON.stringify({ type: 'ALERT_RECEIVED', filePath: message.filePath }));
     };
 
+    let port = preferredPort;
     try {
+      port = await findAvailablePort({ preferredPort });
       wsServer = await startWebSocketServer({ port, onMessage });
     } catch (error) {
       if (process.env.WS_PORT) throw error;
-      port = 8081;
+      port = await findAvailablePort({ preferredPort: preferredPort + 10 });
       wsServer = await startWebSocketServer({ port, onMessage });
     }
 
     const notifyRenderer = () => mainWindow?.webContents.send('ws:status', {
       type: 'WS_STARTED',
-      port,
-      message: `WebSocket listening on ws://0.0.0.0:${port}`,
+      port: wsServer?._boundPort ?? port,
+      message: `WebSocket listening on ws://0.0.0.0:${wsServer?._boundPort ?? port}`,
     });
     if (mainWindow?.webContents.isLoading()) {
       mainWindow.webContents.once('did-finish-load', notifyRenderer);

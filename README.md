@@ -6,15 +6,22 @@ A hackathon prototype demonstrating how a developer's laptop and phone can work 
 
 ## Demo
 
-Open `index.html` in any browser — no build step, no backend, no API keys required. Everything (the terminal, error trace, AI analysis, and patch flow) is simulated with vanilla JavaScript.
+The desktop screen is a hard-coded demo by default. It runs in the browser with no backend or API keys, and it runs as an Electron desktop app when the bridge is available. Browser patching is simulated; Electron patching writes the selected replacement to the target file.
 
-### Try it
-1. Click **🔴 Generate Error** on the Desktop IDE panel.
-2. Watch the error stream to the phone in real time.
-3. Tap **🧠 Analyze with AI** on the phone to see the simulated root-cause analysis and suggested fix.
-4. Tap **🔧 APPLY PATCH** to send the fix back to the desktop and watch both sides update.
-5. Tap **↻ Start New Debug Session** to reset and demo again.
+### Run it
+1. Install dependencies with `npm install`.
+2. Start the browser demo with `npm run dev` or build it with `npm run build`.
+3. Use **Simulate incoming alert** to add a demo alert.
+4. Use **Apply patch** to complete the simulated browser flow.
+
+The optional mobile companion is available at `/mobile.html`. It connects to the Electron WebSocket bridge and can send real alert payloads when the desktop app is running.
+
+### Deploy to Vercel
+
+Import this repository into Vercel. The project is configured to run `npm run build` and publish `dist/`. After deployment, the browser demo is available at `/` and the mobile companion at `/mobile.html`.
+
+The hosted browser demo uses simulated patching. Real WebSocket pairing and filesystem patching require the Electron desktop app running locally.
 
 ## Stack
 
-Single-file HTML/CSS/JS. No dependencies, no build tools — just open `index.html`.
+React, Vite, Electron, WebSocket, and `lucide-react`.
