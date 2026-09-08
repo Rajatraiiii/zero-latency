@@ -5,7 +5,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 0.0.0.0\" \"wait-on tcp:5173 && electron .\"",
+    "dev": "concurrently -k \"vite --host 0.0.0.0\" \"wait-on tcp:5173 && electron . --dev\"",
     "build": "vite build",
     "start": "electron ."
   },

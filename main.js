@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startWebSocketServer } from './server/websocket-server.js';
+import { findAvailablePort } from './server/port-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +12,7 @@ const __dirname = path.dirname(__filename);
 let mainWindow;
 let wsServer = null;
 
-const isDev = !app.isPackaged;
+const isDev = process.argv.includes('--dev');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -24,7 +25,7 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -77,7 +78,7 @@ ipcMain.handle('fs:read-file', async (_, filePath) => {
   return content;
 });
 
-ipcMain.handle('fs:apply-patch', async (_, payload) => {
+async function applyPatchToWorkspace(payload) {
   const { filePath, originalCode, suggestedFix } = payload;
 
   if (!filePath || typeof originalCode !== 'string' || typeof suggestedFix !== 'string') {
@@ -85,37 +86,54 @@ ipcMain.handle('fs:apply-patch', async (_, payload) => {
   }
 
   try {
-    if (!fs.existsSync(filePath)) {
+    const targetPath = path.isAbsolute(filePath) ? filePath : path.resolve(__dirname, filePath);
+    if (!fs.existsSync(targetPath)) {
       return { ok: false, error: `File not found: ${filePath}` };
     }
 
-    const currentContent = fs.readFileSync(filePath, 'utf8');
+    const currentContent = fs.readFileSync(targetPath, 'utf8');
+    if (currentContent.includes(suggestedFix) && !currentContent.includes(originalCode)) {
+      const result = { ok: true, alreadyApplied: true, filePath: targetPath };
+      mainWindow?.webContents.send('ws:status', {
+        type: 'APPLIED_SUCCESS',
+        filePath: targetPath,
+        message: 'Patch was already applied.',
+      });
+      wsServer?.broadcast({
+        type: 'PATCH_APPLIED',
+        filePath: targetPath,
+        message: 'Patch was already applied.',
+      });
+      return result;
+    }
     if (!currentContent.includes(originalCode)) {
       return { ok: false, error: 'The original code was not found in the target file.' };
     }
 
     const updatedContent = currentContent.replace(originalCode, suggestedFix);
-    fs.writeFileSync(filePath, updatedContent, 'utf8');
+    fs.writeFileSync(targetPath, updatedContent, 'utf8');
 
     if (mainWindow) {
       mainWindow.webContents.send('ws:status', {
         type: 'APPLIED_SUCCESS',
-        filePath,
+        filePath: targetPath,
         message: 'Patch applied successfully.',
       });
     }
 
     wsServer?.broadcast({
       type: 'PATCH_APPLIED',
-      filePath,
+      filePath: targetPath,
       message: 'Patch applied successfully.',
     });
 
-    return { ok: true, filePath };
+    return { ok: true, filePath: targetPath };
   } catch (error) {
     return { ok: false, error: error.message };
   }
-});
+}
+
+ipcMain.handle('fs:apply-patch', async (_, payload) => applyPatchToWorkspace(payload));
 
 ipcMain.handle('app:ready', () => ({
   platform: process.platform,
@@ -125,24 +143,33 @@ ipcMain.handle('app:ready', () => ({
 app.whenReady().then(async () => {
   createWindow();
   try {
-    let port = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 8080;
-    const onMessage = (message, socket) => {
+    const preferredPort = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 8080;
+    const onMessage = async (message, socket) => {
+      if (message.type === 'PATCH_REQUEST') {
+        const result = await applyPatchToWorkspace(message);
+        socket.send(JSON.stringify(result.ok
+          ? { type: 'PATCH_APPLIED', filePath: result.filePath, message: 'Patch applied successfully.' }
+          : { type: 'ERROR', message: result.error }));
+        return;
+      }
       mainWindow?.webContents.send('ws:alert', message);
       socket.send(JSON.stringify({ type: 'ALERT_RECEIVED', filePath: message.filePath }));
     };
 
+    let port = preferredPort;
     try {
+      port = await findAvailablePort({ preferredPort });
       wsServer = await startWebSocketServer({ port, onMessage });
     } catch (error) {
       if (process.env.WS_PORT) throw error;
-      port = 8081;
+      port = await findAvailablePort({ preferredPort: preferredPort + 10 });
       wsServer = await startWebSocketServer({ port, onMessage });
     }
 
     const notifyRenderer = () => mainWindow?.webContents.send('ws:status', {
       type: 'WS_STARTED',
-      port,
-      message: `WebSocket listening on ws://0.0.0.0:${port}`,
+      port: wsServer?._boundPort ?? port,
+      message: `WebSocket listening on ws://0.0.0.0:${wsServer?._boundPort ?? port}`,
     });
     if (mainWindow?.webContents.isLoading()) {
       mainWindow.webContents.once('did-finish-load', notifyRenderer);

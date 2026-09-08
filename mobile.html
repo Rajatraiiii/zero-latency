@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1018" />
+    <title>Zero Latency Mobile Companion</title>
+    <link rel="stylesheet" href="/mobile-companion.css" />
+  </head>
+  <body>
+    <main class="mobile-shell">
+      <header class="mobile-header">
+        <span class="brand-mark">ZL</span>
+        <div><p class="eyebrow">Zero Latency</p><h1>Mobile Companion</h1></div>
+      </header>
+
+      <section class="connection-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Desktop bridge</p><h2>Pair with your workspace</h2></div><span id="connection-dot" class="connection-dot"></span></div>
+        <label for="ws-url">WebSocket URL</label>
+        <div class="connect-row"><input id="ws-url" inputmode="url" autocomplete="off" placeholder="ws://192.168.1.10:8081" /><button id="connect-button" type="button">Connect</button></div>
+        <p id="connection-status" class="status">Not connected</p>
+      </section>
+
+      <form id="report-form" class="report-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Send report</p><h2>Share a problem</h2></div></div>
+        <label for="report-type">Report type</label>
+        <select id="report-type"><option value="STACK_TRACE">Stack trace</option><option value="VISUAL_BUG">Visual bug</option></select>
+        <label for="file-path">File path</label>
+        <input id="file-path" required value="src/App.jsx" />
+        <label for="line-number">Line number</label>
+        <input id="line-number" required type="number" min="1" value="42" />
+        <label for="original-code">Current code</label>
+        <textarea id="original-code" required rows="3" placeholder="Paste the current code"></textarea>
+        <label for="suggested-fix">Suggested fix</label>
+        <textarea id="suggested-fix" required rows="3" placeholder="Paste the proposed replacement"></textarea>
+        <label for="explanation">Explanation</label>
+        <textarea id="explanation" required rows="3" placeholder="Explain the problem and fix"></textarea>
+        <button class="send-button" type="submit">Send report to desktop</button>
+        <p id="send-status" class="status" role="status"></p>
+      </form>
+    </main>
+    <script type="module" src="/mobile-companion.js"></script>
+  </body>
+</html>
